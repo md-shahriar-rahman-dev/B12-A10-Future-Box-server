@@ -75,6 +75,16 @@ async function run() {
         .toArray();
       res.send(habits);
     });
+
+    app.get("/habits/public", async (req, res) => {
+      const { category, search } = req.query;
+      const query = {};
+      if (category) query.category = category;
+      if (search) query.title = { $regex: search, $options: "i" };
+      const habits = await habitsCollection.find(query).toArray();
+      res.send(habits);
+    });
+
 // --- Async DB Run ---
 
     // ✅ Ping
