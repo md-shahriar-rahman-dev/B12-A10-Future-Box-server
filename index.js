@@ -66,7 +66,7 @@ function calculateStreak(completionHistory = []) {
 const router = express.Router();
 
 
-router.get('/', (req, res) => res.send({ message: 'API is running ✅' }));
+router.get('/', (req, res) => res.send({ message: 'API is running ' }));
 
 // Add new habit
 router.post('/habits', verifyFirebaseToken, async (req, res) => {
