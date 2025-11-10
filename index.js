@@ -45,10 +45,26 @@ const client = new MongoClient(uri, {
 });
 
 // --- Start Server ---
+// Main route
 app.get("/", (req, res) => {
-  res.send("✅ Habit Hub Server is Running Fine");
+  res.send("✅ Habit Hub Server is running successfully!");
 });
 
+async function run() {
+  try {
+    await client.connect();
+    const db = client.db("habitHub_db");
+    const habitsCollection = db.collection("habits");
+    const usersCollection = db.collection("users");
+
+    // ----------------- USERS -----------------
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const existing = await usersCollection.findOne({ email: user.email });
+      if (existing) return res.send({ message: "User already exists" });
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 // --- Async DB Run ---
 
     // ✅ Ping
