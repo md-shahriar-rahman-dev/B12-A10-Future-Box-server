@@ -67,7 +67,7 @@ async function run() {
     });
 
     // ----------------- HABITS -----------------
-    app.get("/habits/latest", async (req, res) => {
+    app.get("/habits/api/latest", async (req, res) => {
       const habits = await habitsCollection.find({ isPublic: true })
         .sort({ createdAt: -1 })
         .limit(6)
@@ -75,7 +75,7 @@ async function run() {
       res.send(habits);
     });
 
-    app.get("/habits/public", async (req, res) => {
+    app.get("/habits/api/public", async (req, res) => {
       const { category, search } = req.query;
       const query = {};
       if (category) query.category = category;
@@ -84,7 +84,7 @@ async function run() {
       res.send(habits);
     });
 
-    app.get("/habits/my", verifyFirebaseToken, async (req, res) => {
+    app.get("/habits/api/my", verifyFirebaseToken, async (req, res) => {
       const email = req.userEmail;
       const habits = await habitsCollection.find({ userEmail: email }).toArray();
       res.send(habits);
