@@ -1,3 +1,4 @@
+// index.js (server)
 import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
@@ -25,6 +26,7 @@ const client = new MongoClient(MONGO_URI);
 await client.connect();
 const db = client.db('assignmentTen_db');
 const habitsCollection = db.collection('habits');
+const usersCollection = db.collection('users'); 
 
 // ================== Middleware ==================
 async function verifyFirebaseToken(req, res, next) {
@@ -34,7 +36,7 @@ async function verifyFirebaseToken(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    req.user = decoded;
+    req.user = decoded; 
     next();
   } catch (err) {
     res.status(401).send({ message: 'Invalid token' });
@@ -42,28 +44,44 @@ async function verifyFirebaseToken(req, res, next) {
 }
 
 // ================== Helper Function ==================
+
+ 
 function calculateStreak(completionHistory = []) {
-  if (!completionHistory.length) return 0;
+  if (!completionHistory || completionHistory.length === 0) return 0;
 
-  // Convert and sort dates descending
-  const sorted = completionHistory
-    .map(d => new Date(d))
-    .sort((a, b) => b - a);
+ 
+  const uniqueDates = Array.from(new Set(completionHistory.map(d => {
+    const dt = new Date(d);
+    dt.setHours(0,0,0,0);
+    return dt.getTime();
+  })));
 
-  let streak = 1;
-  let prev = sorted[0];
+  uniqueDates.sort((a,b) => b - a); // descending
+
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setHours(0,0,0,0);
+  const todayTs = today.getTime();
 
-  // If last completion wasn’t today, streak starts from 0
-  if (prev.toDateString() !== today.toDateString()) streak = 0;
+  let streak = 0;
+  let expectedTs = todayTs;
 
-  for (let i = 1; i < sorted.length; i++) {
-    const diffDays = Math.round((prev - sorted[i]) / (1000 * 60 * 60 * 24));
-    if (diffDays === 1) {
+  for (let ts of uniqueDates) {
+    if (ts === expectedTs) {
       streak++;
-      prev = sorted[i];
-    } else break;
+      expectedTs = expectedTs - (24 * 60 * 60 * 1000); // previous day
+    } else if (ts < expectedTs) {
+    
+      if (streak === 0) {
+    
+        if (streak === 0) {
+ 
+          streak = 1;
+          expectedTs = ts - (24 * 60 * 60 * 1000);
+        } else break;
+      } else break;
+    } else {
+      continue;
+    }
   }
 
   return streak;
@@ -74,6 +92,20 @@ const router = express.Router();
 
 router.get('/', (req, res) => res.send({ message: 'API is running ✅' }));
 
+// Save user 
+router.post('/users', async (req, res) => {
+  try {
+    const { uid, email, displayName, photoURL } = req.body;
+    if (!email) return res.status(400).send({ message: 'Email required' });
+    const existing = await usersCollection.findOne({ email });
+    if (existing) return res.send({ message: 'User already exists' });
+    const result = await usersCollection.insertOne({ uid, email, displayName, photoURL, createdAt: new Date() });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
 // Add new habit
 router.post('/habits', verifyFirebaseToken, async (req, res) => {
   try {
@@ -81,17 +113,21 @@ router.post('/habits', verifyFirebaseToken, async (req, res) => {
       ...req.body,
       userEmail: req.user.email,
       userId: req.user.uid,
+      userName: req.user.name || req.user.displayName || '',
+      imageUrl: req.body.imageUrl || req.body.image || '',
       createdAt: new Date(),
       completionHistory: [],
     };
     const result = await habitsCollection.insertOne(habit);
-    res.status(201).send({ habit: { _id: result.insertedId, ...habit } });
+    const out = { _id: result.insertedId, ...habit };
+    out.currentStreak = calculateStreak(out.completionHistory);
+    res.status(201).send({ habit: out });
   } catch (err) {
     res.status(500).send({ message: err.message });
   }
 });
 
-// Get latest habits
+// Get latest habits 
 router.get('/habits/latest', async (req, res) => {
   try {
     const habits = await habitsCollection.find().sort({ createdAt: -1 }).limit(6).toArray();
@@ -140,7 +176,7 @@ router.get('/habits/:id', async (req, res) => {
   }
 });
 
-// Update habit
+// Update habit 
 router.patch('/habits/:id', verifyFirebaseToken, async (req, res) => {
   try {
     const habit = await habitsCollection.findOne({ _id: new ObjectId(req.params.id) });
@@ -156,7 +192,7 @@ router.patch('/habits/:id', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Delete habit
+// Delete habit 
 router.delete('/habits/:id', verifyFirebaseToken, async (req, res) => {
   try {
     const habit = await habitsCollection.findOne({ _id: new ObjectId(req.params.id) });
@@ -170,29 +206,39 @@ router.delete('/habits/:id', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// ✅ Mark habit complete (any user, once per day)
+// day.
 router.post('/habits/:id/complete', verifyFirebaseToken, async (req, res) => {
   try {
-    const habit = await habitsCollection.findOne({ _id: new ObjectId(req.params.id) });
+    const habitId = new ObjectId(req.params.id);
+    const habit = await habitsCollection.findOne({ _id: habitId });
     if (!habit) return res.status(404).send({ message: 'Habit not found' });
 
+   
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setHours(0,0,0,0);
+    const todayIso = today.toISOString();
 
-    const alreadyDone = habit.completionHistory?.some(
-      d => new Date(d).toDateString() === today.toDateString()
-    );
+    const alreadyDone = (habit.completionHistory || []).some(d => {
+      const dt = new Date(d);
+      dt.setHours(0,0,0,0);
+      return dt.getTime() === today.getTime();
+    });
 
-    if (!alreadyDone) {
-      habit.completionHistory.push(today.toISOString());
-      await habitsCollection.updateOne(
-        { _id: habit._id },
-        { $set: { completionHistory: habit.completionHistory } }
-      );
+    if (alreadyDone) {
+   
+      habit.currentStreak = calculateStreak(habit.completionHistory);
+      return res.status(200).send({ message: 'Already marked complete today', habit });
     }
 
-    habit.currentStreak = calculateStreak(habit.completionHistory);
-    res.send({ habit });
+
+    await habitsCollection.updateOne(
+      { _id: habitId },
+      { $push: { completionHistory: todayIso } }
+    );
+
+    const updated = await habitsCollection.findOne({ _id: habitId });
+    updated.currentStreak = calculateStreak(updated.completionHistory);
+    res.send({ habit: updated });
   } catch (err) {
     res.status(500).send({ message: err.message });
   }
