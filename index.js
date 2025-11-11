@@ -1,3 +1,4 @@
+// index.js (server)
 import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
@@ -20,12 +21,22 @@ admin.initializeApp({
 });
 
 // ================== MongoDB Atlas ==================
-const MONGO_URI = process.env.MONGO_URI;
-const client = new MongoClient(MONGO_URI);
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.5q9kkgs.mongodb.net/?appName=Cluster0`;
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: '1',
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+
 await client.connect();
+
 const db = client.db('assignmentTen_db');
 const habitsCollection = db.collection('habits');
-const usersCollection = db.collection('users'); 
+const usersCollection = db.collection('users');
+
 
 // ================== Middleware ==================
 async function verifyFirebaseToken(req, res, next) {
