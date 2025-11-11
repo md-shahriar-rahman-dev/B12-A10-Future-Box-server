@@ -13,4 +13,4 @@ Simple Express + MongoDB backend for the Habit Tracker project (Assignment 10).
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill values (MONGO_URI, DB_NAME).
-2. Install:
+2. Install: use node/nodemon index.js
