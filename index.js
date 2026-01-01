@@ -1,10 +1,11 @@
-// index.js (server)
+
 import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import admin from 'firebase-admin';
 import fs from 'fs';
+
 
 dotenv.config();
 
@@ -15,7 +16,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 
 // ================== Firebase Admin ==================
-const serviceAccount = JSON.parse(fs.readFileSync('./firebaseServiceAccount.json', 'utf-8'));
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
