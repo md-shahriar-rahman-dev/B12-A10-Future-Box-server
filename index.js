@@ -3,16 +3,15 @@ import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import admin from 'firebase-admin';
-import fs from 'fs';
 import serverless from 'serverless-http';
 
 dotenv.config();
 
+const PORT = process.env.PORT || 5000;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-const PORT = process.env.PORT || 5000;
 
 // ================== Firebase Admin ==================
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -38,7 +37,6 @@ const db = client.db('assignmentTen_db');
 const habitsCollection = db.collection('habits');
 const usersCollection = db.collection('users');
 
-
 // ================== Middleware ==================
 async function verifyFirebaseToken(req, res, next) {
   const authHeader = req.headers.authorization || '';
@@ -47,63 +45,47 @@ async function verifyFirebaseToken(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    req.user = decoded; 
+    req.user = decoded;
     next();
-  } catch (err) {
+  } catch {
     res.status(401).send({ message: 'Invalid token' });
   }
 }
 
 // ================== Helper Function ==================
-
- 
 function calculateStreak(completionHistory = []) {
   if (!completionHistory || completionHistory.length === 0) return 0;
 
- 
   const uniqueDates = Array.from(new Set(completionHistory.map(d => {
     const dt = new Date(d);
     dt.setHours(0,0,0,0);
     return dt.getTime();
   })));
 
-  uniqueDates.sort((a,b) => b - a); // descending
+  uniqueDates.sort((a,b) => b - a);
 
   const today = new Date();
   today.setHours(0,0,0,0);
-  const todayTs = today.getTime();
-
   let streak = 0;
-  let expectedTs = todayTs;
+  let expectedTs = today.getTime();
 
   for (let ts of uniqueDates) {
-    if (ts === expectedTs) {
-      streak++;
-      expectedTs = expectedTs - (24 * 60 * 60 * 1000); // previous day
-    } else if (ts < expectedTs) {
-    
-      if (streak === 0) {
-    
-        if (streak === 0) {
- 
-          streak = 1;
-          expectedTs = ts - (24 * 60 * 60 * 1000);
-        } else break;
-      } else break;
-    } else {
-      continue;
-    }
+    if (ts === expectedTs) { 
+      streak++; 
+      expectedTs -= 24*60*60*1000; 
+    } else if (ts < expectedTs) break;
   }
 
   return streak;
 }
 
-// ================== ROUTES ==================
+// ================== Routes ==================
 const router = express.Router();
 
+// root
 router.get('/', (req, res) => res.send({ message: 'API is running ✅' }));
 
-// Save user 
+// Save user
 router.post('/users', async (req, res) => {
   try {
     const { uid, email, displayName, photoURL } = req.body;
@@ -117,7 +99,7 @@ router.post('/users', async (req, res) => {
   }
 });
 
-// Add new habit
+// Add habit
 router.post('/habits', verifyFirebaseToken, async (req, res) => {
   try {
     const habit = {
@@ -138,7 +120,7 @@ router.post('/habits', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Get latest habits 
+// Get latest habits
 router.get('/habits/latest', async (req, res) => {
   try {
     const habits = await habitsCollection.find().sort({ createdAt: -1 }).limit(6).toArray();
@@ -187,13 +169,12 @@ router.get('/habits/:id', async (req, res) => {
   }
 });
 
-// Update habit 
+// Update habit
 router.patch('/habits/:id', verifyFirebaseToken, async (req, res) => {
   try {
     const habit = await habitsCollection.findOne({ _id: new ObjectId(req.params.id) });
     if (!habit) return res.status(404).send({ message: 'Habit not found' });
     if (habit.userEmail !== req.user.email) return res.status(403).send({ message: 'Forbidden' });
-
     await habitsCollection.updateOne({ _id: new ObjectId(req.params.id) }, { $set: req.body });
     const updated = await habitsCollection.findOne({ _id: new ObjectId(req.params.id) });
     updated.currentStreak = calculateStreak(updated.completionHistory);
@@ -203,13 +184,12 @@ router.patch('/habits/:id', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Delete habit 
+// Delete habit
 router.delete('/habits/:id', verifyFirebaseToken, async (req, res) => {
   try {
     const habit = await habitsCollection.findOne({ _id: new ObjectId(req.params.id) });
     if (!habit) return res.status(404).send({ message: 'Habit not found' });
     if (habit.userEmail !== req.user.email) return res.status(403).send({ message: 'Forbidden' });
-
     await habitsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
     res.send({ message: 'Habit deleted' });
   } catch (err) {
@@ -217,14 +197,13 @@ router.delete('/habits/:id', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// day.
+// Complete habit
 router.post('/habits/:id/complete', verifyFirebaseToken, async (req, res) => {
   try {
     const habitId = new ObjectId(req.params.id);
     const habit = await habitsCollection.findOne({ _id: habitId });
     if (!habit) return res.status(404).send({ message: 'Habit not found' });
 
-   
     const today = new Date();
     today.setHours(0,0,0,0);
     const todayIso = today.toISOString();
@@ -236,11 +215,9 @@ router.post('/habits/:id/complete', verifyFirebaseToken, async (req, res) => {
     });
 
     if (alreadyDone) {
-   
       habit.currentStreak = calculateStreak(habit.completionHistory);
       return res.status(200).send({ message: 'Already marked complete today', habit });
     }
-
 
     await habitsCollection.updateOne(
       { _id: habitId },
@@ -255,9 +232,13 @@ router.post('/habits/:id/complete', verifyFirebaseToken, async (req, res) => {
   }
 });
 
+// use router
 app.use('/api', router);
 
-// ================== Start Server ==================
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
-app.get('/api', (req, res) => res.send('Server is running ✅'));
+// ================== Local server ==================
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+}
+
+// ================== Export for Vercel ==================
 export default serverless(app);
